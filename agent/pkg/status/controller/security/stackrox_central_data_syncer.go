@@ -2,6 +2,7 @@ package security
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"github.com/go-openapi/swag"
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,6 +34,7 @@ const (
 	// We need to explicitly disable 'gosec' because it wrongly thinks that this value is a secret, when it is only
 	// the name of a secret.
 	stackroxSecretAnnotation = "global-hub.open-cluster-management.io/with-stackrox-credentials-secret" // nolint:gosec
+
 )
 
 type stackroxDataSyncer struct {
@@ -42,6 +45,13 @@ type stackroxDataSyncer struct {
 	client                  client.Client
 	stackroxCentralRequests []stackroxCentralRequest
 	log                     logr.Logger
+}
+
+// stackroxConnectionDetails contains the details needed to connect to the StackRox API.
+type stackroxConnectionDetails struct {
+	url   string
+	token string
+	ca    *x509.CertPool
 }
 
 func (s *stackroxDataSyncer) produceToKafka(ctx context.Context, messageStruct any) error {
@@ -82,7 +92,6 @@ func (s *stackroxDataSyncer) fetchCentralData(ctx context.Context, central stack
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	centralData.internalBaseURL = s.getCentralInternalBaseURL(central)
 	externalBaseURL, err := s.getCentralExternalBaseURL(ctx, central)
 	if err != nil {
 		return fmt.Errorf(
@@ -92,27 +101,31 @@ func (s *stackroxDataSyncer) fetchCentralData(ctx context.Context, central stack
 	}
 	centralData.externalBaseURL = *externalBaseURL
 
-	apiToken, err := s.getCentralAPIToken(ctx, central)
+	connectionDetails, err := s.getCentralConnectionDetails(ctx, central)
 	if err != nil {
-		return fmt.Errorf(
-			"failed to get central API token (name: %s, namespace: %s): %v",
-			central.name, central.namespace, err,
-		)
+		return err
 	}
-	centralData.apiToken = *apiToken
+
+	apiClient, err := clients.NewStackroxClient().
+		SetLogger(s.log).
+		SetURL(connectionDetails.url).
+		SetToken(connectionDetails.token).
+		SetCA(connectionDetails.ca).
+		Build()
+	if err != nil {
+		return err
+	}
+	centralData.apiClient = apiClient
 
 	return nil
 }
 
-func (s *stackroxDataSyncer) pollStackroxCentral(ctx context.Context, client clients.StackroxCentralClient,
+func (s *stackroxDataSyncer) pollStackroxCentral(ctx context.Context, client *clients.StackRoxClient,
 	request stackroxCentralRequest, central stackroxCentral,
 ) error {
 	response, statusCode, err := client.DoRequest(request.Method, request.Path, request.Body)
 	if err != nil {
-		return fmt.Errorf(
-			"failed to make a request to %s (method: %s, path: %s, body: %s): %v",
-			client.BaseURL, request.Method, request.Path, request.Body, err,
-		)
+		return err
 	}
 
 	if *statusCode != 200 {
@@ -136,9 +149,7 @@ func (s *stackroxDataSyncer) reconcileCentralInstance(ctx context.Context, centr
 	centralData := stackroxCentrals[central]
 
 	for _, request := range s.stackroxCentralRequests {
-		centralClient := clients.CreateStackroxCentralClient(centralData.internalBaseURL, centralData.apiToken)
-
-		if err := s.pollStackroxCentral(ctx, centralClient, request, central); err != nil {
+		if err := s.pollStackroxCentral(ctx, centralData.apiClient, request, central); err != nil {
 			return fmt.Errorf("failed to make a request to central: %v", err)
 		}
 
@@ -157,7 +168,7 @@ func (s *stackroxDataSyncer) reconcileCentralInstance(ctx context.Context, centr
 
 func (s *stackroxDataSyncer) reconcile(ctx context.Context) error {
 	for central, centralData := range stackroxCentrals {
-		if centralData.apiToken == "" || centralData.externalBaseURL == "" || centralData.internalBaseURL == "" {
+		if centralData.apiClient == nil || centralData.externalBaseURL == "" {
 			if err := s.fetchCentralData(ctx, central); err != nil {
 				return fmt.Errorf(
 					"failed to fetch central data on the first attempt (name: %s, namespace: %s): %v",
@@ -180,7 +191,7 @@ func (s *stackroxDataSyncer) reconcile(ctx context.Context) error {
 func (a *stackroxDataSyncer) getCentralInternalBaseURL(central stackroxCentral) string {
 	url := url.URL{
 		Scheme: "https",
-		Host:   fmt.Sprintf("%s.%s.svc.cluster.local", stackroxCentralServiceName, central.namespace),
+		Host:   fmt.Sprintf("%s.%s.svc", stackroxCentralServiceName, central.namespace),
 	}
 	return url.String()
 }
@@ -204,63 +215,153 @@ func (a *stackroxDataSyncer) getCentralExternalBaseURL(ctx context.Context, cent
 	return swag.String(centralRouteAsserted.Spec.Host), nil
 }
 
-func (a *stackroxDataSyncer) getCentralAPIToken(ctx context.Context, central stackroxCentral) (*string, error) {
-	centralCRObject := &unstructured.Unstructured{}
-	centralCRObject.SetGroupVersionKind(centralCRGVK)
+func (a *stackroxDataSyncer) getCentralConnectionDetails(ctx context.Context,
+	central stackroxCentral,
+) (result *stackroxConnectionDetails, err error) {
+	// Add the central namespace and name to the log:
+	log := a.log.WithValues(
+		"name", central.name,
+		"namespace", central.namespace,
+	)
 
-	log := a.log.WithValues("name", central.name, "namespace", central.namespace)
-
-	centralCR, err := getResource(ctx, a.client, central.name, central.namespace, centralCRObject, log)
-	if err != nil {
-		return nil, err
-	} else if centralCR == nil {
-		return nil, nil
+	// Fetch the central:
+	centralObject := &unstructured.Unstructured{}
+	centralObject.SetGroupVersionKind(centralCRGVK)
+	centralObjectKey := client.ObjectKey{
+		Namespace: central.namespace,
+		Name:      central.name,
+	}
+	err = a.client.Get(ctx, centralObjectKey, centralObject)
+	if apierrors.IsNotFound(err) {
+		a.log.Info("StackRox central object doesn't exist")
+		return
 	}
 
-	annotations, found, err := unstructured.NestedStringMap(centralCRObject.Object, "metadata", "annotations")
-	if err != nil {
-		return nil, fmt.Errorf("failed accessing central CR annotations: %w", err)
-	} else if !found {
-		return nil, fmt.Errorf("annotations field in central CR not found")
+	// Get the location of the secret containing the connection details:
+	annotations := centralObject.GetAnnotations()
+	if annotations == nil {
+		a.log.Info("StackRox central doesn't have annotations")
+		return
 	}
-
-	stackroxSecretAnnotation, ok := annotations[stackroxSecretAnnotation]
+	annotation, ok := annotations[stackroxSecretAnnotation]
 	if !ok {
-		return nil, fmt.Errorf(
-			"failed to get stackrox central API secret '%s' annotation value",
-			stackroxSecretAnnotation,
+		a.log.Info(
+			"StackRox central doesn't have the annotation that contains the namespace and name of the "+
+				"secret containing the connection details",
+			"annotation", stackroxSecretAnnotation,
 		)
+		return
 	}
-
-	parts := strings.Split(stackroxSecretAnnotation, "/")
+	parts := strings.Split(annotation, "/")
 	if len(parts) != 2 {
-		return nil, fmt.Errorf(
-			"central CR token should be of the format '<namespace/name>' where the secret for the " +
-				"central instance reside",
+		a.log.Error(
+			nil,
+			"The fomat of the annotation that contains the namespace and name of the connection details "+
+				"secret should be 'namespace/name",
+			"annotation", stackroxSecretAnnotation,
+			"value", annotation,
+		)
+		return
+	}
+	detailsSecretNamespace := parts[0]
+	detailsSecretName := parts[1]
+	log = log.WithValues(
+		"secret_namespace", detailsSecretNamespace,
+		"secret_name", detailsSecretName,
+	)
+	log.Info("Got location of the StackRox connection details secret")
+
+	// Fetch the secret:
+	detailsSecret := &corev1.Secret{}
+	detailsSecretKey := client.ObjectKey{
+		Namespace: detailsSecretNamespace,
+		Name:      detailsSecretName,
+	}
+	err = a.client.Get(ctx, detailsSecretKey, detailsSecret)
+	if apierrors.IsNotFound(err) {
+		log.Info("StackRox connection details secret doesn't exist")
+		err = nil
+		return
+	}
+	if err != nil {
+		return
+	}
+
+	// Get the URL:
+	var url string
+	urlBytes, ok := detailsSecret.Data["url"]
+	if ok {
+		url = strings.TrimSpace(string(urlBytes))
+		log.Info(
+			"Got StackRox URL from secret",
+			"url", url,
+		)
+	} else {
+		url = a.getCentralInternalBaseURL(central)
+		log.Info(
+			"StackRox connection details secret doesn't contain the 'url' key, will use the default",
+			"url", url,
 		)
 	}
 
-	secretNamespace := parts[0]
-	secretName := parts[1]
+	// Get the token:
+	var token string
+	tokenBytes, ok := detailsSecret.Data["token"]
+	if ok {
+		token = strings.TrimSpace(string(tokenBytes))
+		log.Info(
+			"Got StackRox token from connection details secret",
+			"token_length", len(token),
+			"token_text", fmt.Sprintf("%.3s...", token),
+		)
+	} else {
+		log.Error(
+			nil,
+			"StackRox connection details secret doesn't contain the 'token' key",
+		)
+		err = fmt.Errorf(
+			"connection details secret '%s/%s' doesn't contain the mandatory 'token' key",
+			detailsSecret.Namespace, detailsSecret.Name,
+		)
+		return
+	}
 
-	centralSecret, err := getResource(ctx, a.client, secretName, secretNamespace, &corev1.Secret{}, log)
+	// Load the system CA certificates:
+	ca, err := x509.SystemCertPool()
 	if err != nil {
-		return nil, err
-	} else if centralSecret == nil {
-		return nil, nil
+		return
 	}
 
-	centralSecretAsserted, ok := centralSecret.(*corev1.Secret)
-	if !ok {
-		return nil, fmt.Errorf("failed to assert central secret type")
+	// Add the CA given in the connection details secret:
+	caBytes, ok := detailsSecret.Data["ca"]
+	if ok {
+		ok = ca.AppendCertsFromPEM(caBytes)
+		if !ok {
+			log.Error(
+				nil,
+				"The 'ca' key of the connection details secret doesn't contain any CA certificate",
+				"ca", string(caBytes),
+			)
+			err = fmt.Errorf(
+				"the 'ca' key of the connection details secret '%s/%s' doesn't contain any CA "+
+					"certificate",
+				detailsSecretKey.Namespace, detailsSecretKey.Name,
+			)
+			return
+		}
+		log.Info(
+			"Loaded CA certificates from the 'ca' key of the connection details secret",
+			"ca_pem", string(caBytes),
+		)
 	}
 
-	token, ok := centralSecretAsserted.Data["token"]
-	if !ok {
-		return nil, fmt.Errorf("failed to get central secret data key 'token'")
+	// Return the result:
+	result = &stackroxConnectionDetails{
+		url:   url,
+		token: token,
+		ca:    ca,
 	}
-
-	return swag.String(strings.TrimSpace(string(token))), nil
+	return
 }
 
 func (a *stackroxDataSyncer) Start(ctx context.Context) error {

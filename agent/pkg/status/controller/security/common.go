@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
+	"github.com/stolostron/multicluster-global-hub/agent/pkg/clients"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -29,8 +30,7 @@ type stackroxCentral struct {
 
 type stackroxCentralData struct {
 	externalBaseURL string
-	internalBaseURL string
-	apiToken        string
+	apiClient       *clients.StackRoxClient
 }
 
 func getResource(
