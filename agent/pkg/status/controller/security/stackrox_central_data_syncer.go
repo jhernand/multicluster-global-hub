@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -86,7 +87,7 @@ func (s *stackroxDataSyncer) produceToKafka(ctx context.Context, messageStruct a
 	return nil
 }
 
-func (s *stackroxDataSyncer) fetchCentralData(ctx context.Context, central stackroxCentral) error {
+func (s *stackroxDataSyncer) fetchCentralData(ctx context.Context, central types.NamespacedName) error {
 	centralData := stackroxCentrals[central]
 
 	mutex.Lock()
@@ -96,7 +97,7 @@ func (s *stackroxDataSyncer) fetchCentralData(ctx context.Context, central stack
 	if err != nil {
 		return fmt.Errorf(
 			"failed to get central external base URL (name: %s, namespace: %s): %v",
-			central.name, central.namespace, err,
+			central.Name, central.Namespace, err,
 		)
 	}
 	centralData.externalBaseURL = *externalBaseURL
@@ -121,7 +122,7 @@ func (s *stackroxDataSyncer) fetchCentralData(ctx context.Context, central stack
 }
 
 func (s *stackroxDataSyncer) pollStackroxCentral(ctx context.Context, client *clients.StackRoxClient,
-	request stackroxCentralRequest, central stackroxCentral,
+	request stackroxCentralRequest, central types.NamespacedName,
 ) error {
 	response, statusCode, err := client.DoRequest(request.Method, request.Path, request.Body)
 	if err != nil {
@@ -145,7 +146,7 @@ func (s *stackroxDataSyncer) pollStackroxCentral(ctx context.Context, client *cl
 	return nil
 }
 
-func (s *stackroxDataSyncer) reconcileCentralInstance(ctx context.Context, central stackroxCentral) error {
+func (s *stackroxDataSyncer) reconcileCentralInstance(ctx context.Context, central types.NamespacedName) error {
 	centralData := stackroxCentrals[central]
 
 	for _, request := range s.stackroxCentralRequests {
@@ -172,7 +173,7 @@ func (s *stackroxDataSyncer) reconcile(ctx context.Context) error {
 			if err := s.fetchCentralData(ctx, central); err != nil {
 				return fmt.Errorf(
 					"failed to fetch central data on the first attempt (name: %s, namespace: %s): %v",
-					central.name, central.namespace, err,
+					central.Name, central.Namespace, err,
 				)
 			}
 		}
@@ -180,7 +181,7 @@ func (s *stackroxDataSyncer) reconcile(ctx context.Context) error {
 		if err := s.reconcileCentralInstance(ctx, central); err != nil {
 			return fmt.Errorf(
 				"failed to reconcile central instance (name: %s, namespace: %s): %v",
-				central.name, central.namespace, err,
+				central.Name, central.Namespace, err,
 			)
 		}
 	}
@@ -188,16 +189,18 @@ func (s *stackroxDataSyncer) reconcile(ctx context.Context) error {
 	return nil
 }
 
-func (a *stackroxDataSyncer) getCentralInternalBaseURL(central stackroxCentral) string {
+func (a *stackroxDataSyncer) getCentralInternalBaseURL(central types.NamespacedName) string {
 	url := url.URL{
 		Scheme: "https",
-		Host:   fmt.Sprintf("%s.%s.svc", stackroxCentralServiceName, central.namespace),
+		Host:   fmt.Sprintf("%s.%s.svc", stackroxCentralServiceName, central.Namespace),
 	}
 	return url.String()
 }
 
-func (a *stackroxDataSyncer) getCentralExternalBaseURL(ctx context.Context, central stackroxCentral) (*string, error) {
-	centralRoute, err := getResource(ctx, a.client, stackroxCentralServiceName, central.namespace, &routev1.Route{}, a.log)
+func (a *stackroxDataSyncer) getCentralExternalBaseURL(ctx context.Context,
+	central types.NamespacedName,
+) (*string, error) {
+	centralRoute, err := getResource(ctx, a.client, stackroxCentralServiceName, central.Namespace, &routev1.Route{}, a.log)
 	if err != nil {
 		return nil, err
 	} else if centralRoute == nil {
@@ -208,7 +211,7 @@ func (a *stackroxDataSyncer) getCentralExternalBaseURL(ctx context.Context, cent
 	if !ok {
 		return nil, fmt.Errorf(
 			"failed to assert central route (name: %s, namespace: %s)",
-			central.name, central.namespace,
+			central.Name, central.Namespace,
 		)
 	}
 
@@ -216,22 +219,18 @@ func (a *stackroxDataSyncer) getCentralExternalBaseURL(ctx context.Context, cent
 }
 
 func (a *stackroxDataSyncer) getCentralConnectionDetails(ctx context.Context,
-	central stackroxCentral,
+	centralKey types.NamespacedName,
 ) (result *stackroxConnectionDetails, err error) {
 	// Add the central namespace and name to the log:
 	log := a.log.WithValues(
-		"name", central.name,
-		"namespace", central.namespace,
+		"name", centralKey.Name,
+		"namespace", centralKey.Namespace,
 	)
 
 	// Fetch the central:
 	centralObject := &unstructured.Unstructured{}
 	centralObject.SetGroupVersionKind(centralCRGVK)
-	centralObjectKey := client.ObjectKey{
-		Namespace: central.namespace,
-		Name:      central.name,
-	}
-	err = a.client.Get(ctx, centralObjectKey, centralObject)
+	err = a.client.Get(ctx, centralKey, centralObject)
 	if apierrors.IsNotFound(err) {
 		a.log.Info("StackRox central object doesn't exist")
 		return
@@ -273,7 +272,7 @@ func (a *stackroxDataSyncer) getCentralConnectionDetails(ctx context.Context,
 
 	// Fetch the secret:
 	detailsSecret := &corev1.Secret{}
-	detailsSecretKey := client.ObjectKey{
+	detailsSecretKey := types.NamespacedName{
 		Namespace: detailsSecretNamespace,
 		Name:      detailsSecretName,
 	}
@@ -297,7 +296,7 @@ func (a *stackroxDataSyncer) getCentralConnectionDetails(ctx context.Context,
 			"url", url,
 		)
 	} else {
-		url = a.getCentralInternalBaseURL(central)
+		url = a.getCentralInternalBaseURL(centralKey)
 		log.Info(
 			"StackRox connection details secret doesn't contain the 'url' key, will use the default",
 			"url", url,

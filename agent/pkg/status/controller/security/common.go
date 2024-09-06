@@ -6,27 +6,23 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
-	"github.com/stolostron/multicluster-global-hub/agent/pkg/clients"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	clientpkg "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/stolostron/multicluster-global-hub/agent/pkg/clients"
 )
 
 var (
 	mutex            sync.Mutex
-	stackroxCentrals map[stackroxCentral]*stackroxCentralData = map[stackroxCentral]*stackroxCentralData{}
-	centralCRGVK     schema.GroupVersionKind                  = schema.GroupVersionKind{
+	stackroxCentrals = map[types.NamespacedName]*stackroxCentralData{}
+	centralCRGVK     = schema.GroupVersionKind{
 		Group:   "platform.stackrox.io",
 		Version: "v1alpha1",
 		Kind:    "Central",
 	}
 )
-
-type stackroxCentral struct {
-	name      string
-	namespace string
-}
 
 type stackroxCentralData struct {
 	externalBaseURL string
