@@ -19,7 +19,13 @@ import (
 	"github.com/stolostron/multicluster-global-hub/agent/pkg/config"
 	specController "github.com/stolostron/multicluster-global-hub/agent/pkg/spec/controller"
 	statusController "github.com/stolostron/multicluster-global-hub/agent/pkg/status/controller"
+	"github.com/stolostron/multicluster-global-hub/agent/pkg/status/controller/security"
 	"github.com/stolostron/multicluster-global-hub/pkg/transport"
+)
+
+const (
+	clusterManagersCRDName = "clustermanagers.operator.open-cluster-management.io"
+	stackRoxCentralCRDName = "centrals.platform.stackrox.io"
 )
 
 var (
@@ -37,6 +43,16 @@ type crdController struct {
 }
 
 func (c *crdController) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
+	switch {
+	case request.Name == clusterManagersCRDName:
+		return c.reconcileClusterManagers(ctx, request)
+	case request.Name == stackRoxCentralCRDName && c.agentConfig.EnableStackroxIntegration:
+		return c.reconcileStackRoxCentrals()
+	}
+	return ctrl.Result{}, nil
+}
+
+func (c *crdController) reconcileClusterManagers(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
 	reqLogger := c.log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
 	reqLogger.V(2).Info("crd controller", "NamespacedName:", request.NamespacedName)
 
@@ -60,6 +76,13 @@ func (c *crdController) Reconcile(ctx context.Context, request ctrl.Request) (ct
 		return ctrl.Result{}, fmt.Errorf("failed to add lease updater: %w", err)
 	}
 
+	return ctrl.Result{}, nil
+}
+
+func (c *crdController) reconcileStackRoxCentrals() (ctrl.Result, error) {
+	if err := security.AddStackroxCentralController(c.mgr); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to add StackRox central controller: %w", err)
+	}
 	return ctrl.Result{}, nil
 }
 
