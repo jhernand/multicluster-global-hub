@@ -146,8 +146,8 @@ func parseFlags() *config.AgentConfig {
 	pflag.IntVar(&agentConfig.Burst, "burst", 300,
 		"Burst for the multicluster global hub agent")
 	pflag.BoolVar(&agentConfig.EnablePprof, "enable-pprof", false, "Enable the pprof tool.")
-	pflag.BoolVar(&agentConfig.EnableStackroxIntegration, "acs-integration", false,
-		"Enable ACS integration")
+	pflag.BoolVar(&agentConfig.EnableStackroxIntegration, "enable-stackrox-integration", false,
+		"Enable StackRox integration")
 	pflag.DurationVar(&agentConfig.ACSPollInterval, "acs-poll-interval", 30*time.Minute,
 		"The interval between each ACS polling")
 	pflag.Parse()

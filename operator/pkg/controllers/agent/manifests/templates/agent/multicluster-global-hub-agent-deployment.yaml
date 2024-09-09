@@ -47,7 +47,7 @@ spec:
             - --burst={{.AgentBurst}}
             - --enable-pprof={{.EnablePprof}}
             - --acs-poll-interval=1m
-            - --acs-integration=true
+            - --enable-stackrox-integration={{.EnableStackroxIntegration}}
           env:
             - name: POD_NAMESPACE
               valueFrom:
