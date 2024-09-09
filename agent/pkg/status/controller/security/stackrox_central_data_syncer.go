@@ -35,7 +35,6 @@ const (
 )
 
 type stackroxDataSyncer struct {
-	mgr                     manager.Manager
 	ticker                  *time.Ticker
 	topic                   string
 	producer                transport.Producer
@@ -292,7 +291,6 @@ func AddStackroxDataSyncer(
 	producer transport.Producer,
 ) error {
 	return mgr.Add(&stackroxDataSyncer{
-		mgr:                     mgr,
 		client:                  mgr.GetClient(),
 		ticker:                  time.NewTicker(interval),
 		topic:                   topic,

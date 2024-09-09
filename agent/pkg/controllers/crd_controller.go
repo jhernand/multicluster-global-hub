@@ -57,7 +57,7 @@ func (c *crdController) reconcileClusterManagers(ctx context.Context, request ct
 	reqLogger.V(2).Info("crd controller", "NamespacedName:", request.NamespacedName)
 
 	// add spec controllers
-	if err := specController.AddToManager(c.mgr, c.consumer, c.agentConfig, c.producer); err != nil {
+	if err := specController.AddToManager(c.mgr, c.consumer, c.agentConfig); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to add spec syncer: %w", err)
 	}
 	reqLogger.V(2).Info("add spec controllers to manager")
@@ -80,9 +80,25 @@ func (c *crdController) reconcileClusterManagers(ctx context.Context, request ct
 }
 
 func (c *crdController) reconcileStackRoxCentrals() (ctrl.Result, error) {
-	if err := security.AddStackroxCentralController(c.mgr); err != nil {
+	c.log.Info("Detected the presence of the StackRox central CRD")
+
+	err := security.AddStackroxCentralController(c.mgr)
+	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to add StackRox central controller: %w", err)
 	}
+	c.log.Info("Added StackRox central controller")
+
+	err = security.AddStackroxDataSyncer(
+		c.mgr,
+		c.agentConfig.StackroxPollInterval,
+		c.agentConfig.TransportConfig.KafkaCredential.StatusTopic,
+		c.producer,
+	)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to add StackRox data syncer: %w", err)
+	}
+	c.log.Info("Added StackRox data syncer")
+
 	return ctrl.Result{}, nil
 }
 

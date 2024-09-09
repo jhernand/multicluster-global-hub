@@ -52,7 +52,6 @@ func AddStackroxCentralController(mgr ctrl.Manager) error {
 		centralCR: central,
 	}
 
-	controller.log.Info("Adding Stackrox Central CR controller")
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(central).
 		Complete(&controller); err != nil {

@@ -8,14 +8,13 @@ import (
 	"github.com/stolostron/multicluster-global-hub/agent/pkg/config"
 	"github.com/stolostron/multicluster-global-hub/agent/pkg/spec/controller/syncers"
 	"github.com/stolostron/multicluster-global-hub/agent/pkg/spec/controller/workers"
-	"github.com/stolostron/multicluster-global-hub/agent/pkg/status/controller/security"
 	"github.com/stolostron/multicluster-global-hub/pkg/constants"
 	"github.com/stolostron/multicluster-global-hub/pkg/transport"
 )
 
 var specCtrlStarted = false
 
-func AddToManager(mgr ctrl.Manager, consumer transport.Consumer, agentConfig *config.AgentConfig, producer transport.Producer) error {
+func AddToManager(mgr ctrl.Manager, consumer transport.Consumer, agentConfig *config.AgentConfig) error {
 	if specCtrlStarted {
 		return nil
 	}
@@ -41,12 +40,6 @@ func AddToManager(mgr ctrl.Manager, consumer transport.Consumer, agentConfig *co
 	}
 
 	dispatcher.RegisterSyncer(constants.ResyncMsgKey, syncers.NewResyncSyncer())
-
-	if agentConfig.EnableStackroxIntegration {
-		if err := security.AddStackroxDataSyncer(mgr, agentConfig.StackroxPollInterval, agentConfig.TransportConfig.KafkaCredential.StatusTopic, producer); err != nil {
-			return fmt.Errorf("failed to add stackrox data syncer: %w", err)
-		}
-	}
 
 	specCtrlStarted = true
 	return nil
