@@ -66,6 +66,7 @@ type ManifestsConfig struct {
 	// cannot use *corev1.ResourceRequirements, addonfactory.StructToValues removes the real value
 	Resources                 *Resources
 	EnableStackroxIntegration bool
+	StackroxPollInterval      time.Duration
 }
 
 type Resources struct {
@@ -226,6 +227,7 @@ func (a *HohAgentAddon) GetValues(cluster *clusterv1.ManagedCluster,
 		EnablePprof:               a.operatorConfig.EnablePprof,
 		Resources:                 agentRes,
 		EnableStackroxIntegration: config.WithStackroxIntegration(mgh),
+		StackroxPollInterval:      config.GetStackroxPollInterval(mgh),
 	}
 
 	if err := a.setImagePullSecret(mgh, cluster, &manifestsConfig); err != nil {

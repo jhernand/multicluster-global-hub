@@ -43,7 +43,7 @@ func AddToManager(mgr ctrl.Manager, consumer transport.Consumer, agentConfig *co
 	dispatcher.RegisterSyncer(constants.ResyncMsgKey, syncers.NewResyncSyncer())
 
 	if agentConfig.EnableStackroxIntegration {
-		if err := security.AddStackroxDataSyncer(mgr, agentConfig.ACSPollInterval, agentConfig.TransportConfig.KafkaCredential.StatusTopic, producer); err != nil {
+		if err := security.AddStackroxDataSyncer(mgr, agentConfig.StackroxPollInterval, agentConfig.TransportConfig.KafkaCredential.StatusTopic, producer); err != nil {
 			return fmt.Errorf("failed to add stackrox data syncer: %w", err)
 		}
 	}

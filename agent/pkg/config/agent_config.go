@@ -22,5 +22,5 @@ type AgentConfig struct {
 	Burst                        int
 	EnablePprof                  bool
 	EnableStackroxIntegration    bool
-	ACSPollInterval              time.Duration
+	StackroxPollInterval         time.Duration
 }
