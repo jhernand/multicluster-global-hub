@@ -18,7 +18,6 @@ import (
 	"github.com/stolostron/multicluster-global-hub/agent/pkg/status/controller/managedclusters"
 	"github.com/stolostron/multicluster-global-hub/agent/pkg/status/controller/placement"
 	"github.com/stolostron/multicluster-global-hub/agent/pkg/status/controller/policies"
-	"github.com/stolostron/multicluster-global-hub/agent/pkg/status/controller/security"
 	"github.com/stolostron/multicluster-global-hub/pkg/transport"
 )
 
@@ -81,11 +80,6 @@ func AddControllers(ctx context.Context, mgr ctrl.Manager, producer transport.Pr
 	if err := filter.LaunchTimeFilter(ctx, mgr.GetClient(), agentConfig.PodNameSpace,
 		agentConfig.TransportConfig.KafkaCredential.StatusTopic); err != nil {
 		return fmt.Errorf("failed to launch time filter: %w", err)
-	}
-	if agentConfig.EnableStackroxIntegration {
-		if err := security.LaunchStackroxCentralCRDController(ctx, mgr); err != nil {
-			return fmt.Errorf("failed to launch Stackrox Central CRD controller: %w", err)
-		}
 	}
 
 	statusCtrlStarted = true

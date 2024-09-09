@@ -12,7 +12,6 @@ import (
 )
 
 type stackroxCentralCRController struct {
-	ctx       context.Context
 	mgr       manager.Manager
 	log       logr.Logger
 	client    client.Client
@@ -23,7 +22,7 @@ func (s *stackroxCentralCRController) Reconcile(ctx context.Context, request ctr
 	reqLogger := s.log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
 	reqLogger.Info("ACS Central CR controller", "NamespacedName:", request.NamespacedName)
 
-	centralCR, err := getResource(s.ctx, s.client, request.Name, request.Namespace, s.centralCR, reqLogger)
+	centralCR, err := getResource(ctx, s.client, request.Name, request.Namespace, s.centralCR, reqLogger)
 	if err != nil {
 		return ctrl.Result{}, err
 	} else if centralCR == nil {
@@ -42,12 +41,11 @@ func (s *stackroxCentralCRController) Reconcile(ctx context.Context, request ctr
 	return ctrl.Result{}, nil
 }
 
-func LaunchStackroxCentralCRController(ctx context.Context, mgr ctrl.Manager) error {
+func AddStackroxCentralController(mgr ctrl.Manager) error {
 	central := &unstructured.Unstructured{}
 	central.SetGroupVersionKind(centralCRGVK)
 
 	controller := stackroxCentralCRController{
-		ctx:       ctx,
 		mgr:       mgr,
 		log:       ctrl.Log.WithName("stackrox-central-cr-controller"),
 		client:    mgr.GetClient(),
