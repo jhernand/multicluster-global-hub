@@ -26,16 +26,16 @@ func (s *stackroxCentralCRController) Reconcile(ctx context.Context, request ctr
 	if err != nil {
 		return ctrl.Result{}, err
 	} else if centralCR == nil {
-		if _, ok := stackroxCentrals[stackroxCentral{name: request.Name, namespace: request.Namespace}]; ok {
+		if _, ok := stackroxCentrals[request.NamespacedName]; ok {
 			reqLogger.Info("Deleting Stackrox Central instance")
-			delete(stackroxCentrals, stackroxCentral{name: request.Name, namespace: request.Namespace})
+			delete(stackroxCentrals, request.NamespacedName)
 		}
 		return ctrl.Result{}, nil
 	}
 
-	if _, ok := stackroxCentrals[stackroxCentral{name: request.Name, namespace: request.Namespace}]; !ok {
+	if _, ok := stackroxCentrals[request.NamespacedName]; !ok {
 		reqLogger.Info("Found a new central instance to sync")
-		stackroxCentrals[stackroxCentral{name: request.Name, namespace: request.Namespace}] = &stackroxCentralData{}
+		stackroxCentrals[request.NamespacedName] = &stackroxCentralData{}
 	}
 
 	return ctrl.Result{}, nil

@@ -14,18 +14,13 @@ import (
 
 var (
 	mutex            sync.Mutex
-	stackroxCentrals map[stackroxCentral]*stackroxCentralData = map[stackroxCentral]*stackroxCentralData{}
-	centralCRGVK     schema.GroupVersionKind                  = schema.GroupVersionKind{
+	stackroxCentrals = map[types.NamespacedName]*stackroxCentralData{}
+	centralCRGVK     = schema.GroupVersionKind{
 		Group:   "platform.stackrox.io",
 		Version: "v1alpha1",
 		Kind:    "Central",
 	}
 )
-
-type stackroxCentral struct {
-	name      string
-	namespace string
-}
 
 type stackroxCentralData struct {
 	externalBaseURL string
