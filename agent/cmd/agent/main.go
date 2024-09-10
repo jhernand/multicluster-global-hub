@@ -170,7 +170,6 @@ func completeConfig(agentConfig *config.AgentConfig) error {
 	if agentConfig.MetricsAddress == "" {
 		agentConfig.MetricsAddress = fmt.Sprintf("%s:%d", metricsHost, metricsPort)
 	}
-
 	return nil
 }
 

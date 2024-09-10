@@ -6,7 +6,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/go-logr/logr"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -28,10 +27,7 @@ const (
 	stackRoxCentralCRDName = "centrals.platform.stackrox.io"
 )
 
-var (
-	crdCtrlStarted bool
-	mutex          sync.Mutex
-)
+var crdCtrlStarted = false
 
 type crdController struct {
 	mgr         ctrl.Manager
@@ -107,9 +103,6 @@ func (c *crdController) reconcileStackRoxCentrals() (ctrl.Result, error) {
 func AddCRDController(mgr ctrl.Manager, restConfig *rest.Config, agentConfig *config.AgentConfig,
 	producer transport.Producer, consumer transport.Consumer,
 ) error {
-	mutex.Lock()
-	defer mutex.Unlock()
-
 	if crdCtrlStarted {
 		return nil
 	}

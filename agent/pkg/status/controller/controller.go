@@ -41,22 +41,26 @@ func AddControllers(ctx context.Context, mgr ctrl.Manager, producer transport.Pr
 	}
 
 	// event syncer
-	if err := event.LaunchEventSyncer(ctx, mgr, agentConfig, producer); err != nil {
+	err := event.LaunchEventSyncer(ctx, mgr, agentConfig, producer)
+	if err != nil {
 		return fmt.Errorf("failed to launch event syncer: %w", err)
 	}
 
 	// policy syncer(local and global)
-	if err := policies.LaunchPolicySyncer(ctx, mgr, agentConfig, producer); err != nil {
+	err = policies.LaunchPolicySyncer(ctx, mgr, agentConfig, producer)
+	if err != nil {
 		return fmt.Errorf("failed to launch policy syncer: %w", err)
 	}
 
 	// hub cluster info
-	if err := hubcluster.LaunchHubClusterInfoSyncer(mgr, producer); err != nil {
+	err = hubcluster.LaunchHubClusterInfoSyncer(mgr, producer)
+	if err != nil {
 		return fmt.Errorf("failed to launch hub cluster info syncer: %w", err)
 	}
 
 	// hub cluster heartbeat
-	if err := hubcluster.LaunchHubClusterHeartbeatSyncer(mgr, producer); err != nil {
+	err = hubcluster.LaunchHubClusterHeartbeatSyncer(mgr, producer)
+	if err != nil {
 		return fmt.Errorf("failed to launch hub cluster heartbeat syncer: %w", err)
 	}
 
@@ -83,6 +87,5 @@ func AddControllers(ctx context.Context, mgr ctrl.Manager, producer transport.Pr
 	}
 
 	statusCtrlStarted = true
-
 	return nil
 }

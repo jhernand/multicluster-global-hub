@@ -145,7 +145,6 @@ func (r *CrdController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		}
 		r.addonsControllerReady = true
 	}
-
 	return ctrl.Result{}, nil
 }
 
