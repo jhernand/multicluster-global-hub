@@ -104,14 +104,14 @@ func (s *stackroxDataSyncer) fetchCentralData(ctx context.Context, central types
 	return nil
 }
 
-func (s *stackroxDataSyncer) pollStackroxCentral(ctx context.Context, client clients.StackroxCentralClient,
+func (s *stackroxDataSyncer) pollStackroxCentral(ctx context.Context, client *clients.StackRoxClient,
 	request stackroxCentralRequest, central types.NamespacedName,
 ) error {
 	response, statusCode, err := client.DoRequest(request.Method, request.Path, request.Body)
 	if err != nil {
 		return fmt.Errorf(
-			"failed to make a request to %s (method: %s, path: %s, body: %s): %v",
-			client.BaseURL, request.Method, request.Path, request.Body, err,
+			"failed to make a request (method: %s, path: %s, body: %s): %v",
+			request.Method, request.Path, request.Body, err,
 		)
 	}
 
@@ -136,7 +136,14 @@ func (s *stackroxDataSyncer) reconcileCentralInstance(ctx context.Context, centr
 	centralData := stackroxCentrals[central]
 
 	for _, request := range s.stackroxCentralRequests {
-		centralClient := clients.CreateStackroxCentralClient(centralData.internalBaseURL, centralData.apiToken)
+		centralClient, err := clients.NewStackRoxClient().
+			SetLogger(s.log).
+			SetURL(centralData.internalBaseURL).
+			SetToken(centralData.apiToken).
+			Build()
+		if err != nil {
+			return err
+		}
 
 		if err := s.pollStackroxCentral(ctx, centralClient, request, central); err != nil {
 			return fmt.Errorf("failed to make a request to central: %v", err)
